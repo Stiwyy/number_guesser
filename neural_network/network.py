@@ -85,3 +85,8 @@ class NeuralNetwork:
 
         self.W3 -= learning_rate * self.dW3
         self.b3 -= learning_rate * self.db3
+
+    def predict(self, X):
+        probabilities = self.forward(X)
+
+        return np.argmax(probabilities, axis=1)
