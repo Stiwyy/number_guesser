@@ -35,12 +35,47 @@ class NeuralNetwork:
         self.b3 = np.zeros((1, 10))
 
     def forward(self, X):
-        z1 = X @ self.W1 + self.b1
-        a1 = relu(z1)
+        self.X = X
 
-        z2 = a1 @ self.W2 + self.b2
-        a2 = relu(z2)
+        self.z1 = X @ self.W1 + self.b1
+        self.a1 = relu(self.z1)
 
-        z3 = a2 @ self.W3 + self.b3
+        self.z2 = self.a1 @ self.W2 + self.b2
+        self.a2 = relu(self.z2)
 
-        return softmax(z3)
+        self.z3 = self.a2 @ self.W3 + self.b3
+        self.output = softmax(self.z3)
+
+        return self.output
+
+    def backward(self, labels):
+        batch_size = self.X.shape[0]
+
+        dz3 = self.output.copy()
+        dz3[np.arange(batch_size), labels] -= 1
+        dz3 /= batch_size
+
+        self.dW3 = self.a2.T @ dz3
+        self.db3 = np.sum(dz3, axis=0, keepdims=True)
+
+        da2 = dz3 @ self.W3.T
+        dz2 = da2 * (self.z2 > 0)
+
+        self.dW2 = self.a1.T @ dz2
+        self.db2 = np.sum(dz2, axis=0, keepdims=True)
+
+        da1 = dz2 @ self.W2.T
+        dz1 = da1 * (self.z1 > 0)
+
+        self.dW1 = self.X.T @ dz1
+        self.db1 = np.sum(dz1, axis=0, keepdims=True)
+
+    def update(self, learning_rate):
+        self.W1 -= learning_rate * self.dW1
+        self.b1 -= learning_rate * self.db1
+
+        self.W2 -= learning_rate * self.dW2
+        self.b2 -= learning_rate * self.db2
+
+        self.W3 -= learning_rate * self.dW3
+        self.b3 -= learning_rate * self.db3

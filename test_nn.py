@@ -7,36 +7,27 @@ network = NeuralNetwork()
 
 x = np.random.rand(1, 784)
 
-output = network.forward(x)
-
 label = np.array([7])
 
-loss = cross_entropy_loss(output, label)
 
-print("Output:")
-print(output)
+output = network.forward(x)
 
-print()
+loss_before = cross_entropy_loss(output, label)
 
-print("Output shape:")
-print(output.shape)
+print("Before:")
+print("Prediction:", np.argmax(output))
+print("Loss:", loss_before)
 
-print()
 
-print("Probability sum:")
-print(np.sum(output))
+network.backward(label)
+network.update(0.1)
 
-print()
 
-print("Prediction:")
-print(np.argmax(output))
+output = network.forward(x)
+
+loss_after = cross_entropy_loss(output, label)
 
 print()
-
-print("Actual:")
-print(label[0])
-
-print()
-
-print("Loss:")
-print(loss)
+print("After:")
+print("Prediction:", np.argmax(output))
+print("Loss:", loss_after)
