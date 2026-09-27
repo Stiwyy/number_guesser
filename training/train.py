@@ -1,7 +1,7 @@
 import numpy as np
 from tensorflow.keras.datasets import mnist
 
-from neural_network.network import NeuralNetwork, cross_entropy_loss
+from neural_network.network import NeuralNetwork, cross_entropy_loss, accuracy
 
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
@@ -52,4 +52,12 @@ for epoch in range(epochs):
 
     average_loss = total_loss / (len(x_train) / batch_size)
 
-    print(f"Epoch {epoch + 1}/{epochs} - Loss: {average_loss:.4f}")
+    test_predictions = network.forward(x_test)
+
+    test_accuracy = accuracy(test_predictions, y_test)
+
+    print(
+        f"Epoch {epoch + 1}/{epochs} "
+        f"- Loss: {average_loss:.4f} "
+        f"- Test accuracy: {test_accuracy * 100:.2f}%"
+    )
