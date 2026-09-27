@@ -2,103 +2,359 @@ import numpy as np
 
 
 def relu(x):
-    return np.maximum(0, x)
+    return np.maximum(x, 0)
 
 
 def softmax(x):
     x = x - np.max(x, axis=1, keepdims=True)
-    exp_x = np.exp(x)
-    return exp_x / np.sum(exp_x, axis=1, keepdims=True)
+    e = np.exp(x)
+    return e / np.sum(e, axis=1, keepdims=True)
 
 
 def cross_entropy_loss(predictions, labels):
-    batch_size = predictions.shape[0]
-
-    probabilities = predictions[np.arange(batch_size), labels]
-
-    probabilities = np.clip(probabilities, 1e-12, 1.0)
-
-    loss = -np.log(probabilities)
-
-    return np.mean(loss)
+    n = labels.shape[0]
+    p = np.clip(predictions[np.arange(n), labels], 1e-12, 1.0)
+    return -np.mean(np.log(p))
 
 
 def accuracy(predictions, labels):
-    predicted_labels = np.argmax(predictions, axis=1)
+    return np.mean(np.argmax(predictions, axis=1) == labels)
 
-    return np.mean(predicted_labels == labels)
+
+def im2col(x, k, padding=0, stride=1):
+    n, h, w, c = x.shape
+
+    if padding:
+        x = np.pad(
+            x, ((0, 0), (padding, padding), (padding, padding), (0, 0)), mode="constant"
+        )
+
+    oh = (h + 2 * padding - k) // stride + 1
+    ow = (w + 2 * padding - k) // stride + 1
+
+    shape = (n, oh, ow, k, k, c)
+    strides = (
+        x.strides[0],
+        x.strides[1] * stride,
+        x.strides[2] * stride,
+        x.strides[1],
+        x.strides[2],
+        x.strides[3],
+    )
+
+    cols = np.lib.stride_tricks.as_strided(
+        x, shape=shape, strides=strides, writeable=False
+    )
+
+    return cols.reshape(n * oh * ow, k * k * c), oh, ow
+
+
+def col2im(cols, input_shape, k, padding=0, stride=1):
+    n, h, w, c = input_shape
+
+    oh = (h + 2 * padding - k) // stride + 1
+    ow = (w + 2 * padding - k) // stride + 1
+
+    cols = cols.reshape(n, oh, ow, k, k, c)
+
+    out = np.zeros((n, h + 2 * padding, w + 2 * padding, c), dtype=cols.dtype)
+
+    for i in range(k):
+        for j in range(k):
+            out[:, i : i + stride * oh : stride, j : j + stride * ow : stride, :] += (
+                cols[:, :, :, i, j, :]
+            )
+
+    if padding:
+        return out[:, padding:-padding, padding:-padding, :]
+
+    return out
+
+
+def max_pool2x2(x):
+    n, h, w, c = x.shape
+
+    h2 = h // 2
+    w2 = w // 2
+
+    x = x[:, : h2 * 2, : w2 * 2, :]
+
+    x = x.reshape(n, h2, 2, w2, 2, c)
+
+    out = x.max(axis=(2, 4))
+
+    mask = x == out[:, :, None, :, None, :]
+
+    return out, mask
+
+
+def max_pool2x2_backward(dout, mask):
+    dx = np.zeros(mask.shape, dtype=dout.dtype)
+
+    dx += mask * dout[:, :, None, :, None, :]
+
+    n, h, _, w, _, c = dx.shape
+
+    return dx.reshape(n, h * 2, w * 2, c)
+
+
+class Conv2D:
+    def __init__(self, input_channels, output_channels, kernel_size=3, padding=1):
+        self.kernel_size = kernel_size
+        self.padding = padding
+
+        fan_in = kernel_size * kernel_size * input_channels
+
+        scale = np.sqrt(2.0 / fan_in)
+
+        self.W = (
+            np.random.randn(
+                kernel_size, kernel_size, input_channels, output_channels
+            ).astype(np.float32)
+            * scale
+        )
+
+        self.b = np.zeros(output_channels, dtype=np.float32)
+
+        self.mW = np.zeros_like(self.W)
+        self.vW = np.zeros_like(self.W)
+
+        self.mb = np.zeros_like(self.b)
+        self.vb = np.zeros_like(self.b)
+
+    def forward(self, x):
+        self.x = x
+
+        self.cols, oh, ow = im2col(x, self.kernel_size, self.padding)
+
+        w = self.W.reshape(-1, self.W.shape[-1])
+
+        out = self.cols @ w + self.b
+
+        return out.reshape(x.shape[0], oh, ow, self.W.shape[-1])
+
+    def backward(self, dout):
+        dout_flat = dout.reshape(-1, self.W.shape[-1])
+
+        self.dW = (self.cols.T @ dout_flat).reshape(self.W.shape)
+
+        self.db = np.sum(dout_flat, axis=0)
+
+        w = self.W.reshape(-1, self.W.shape[-1])
+
+        dcols = dout_flat @ w.T
+
+        return col2im(dcols, self.x.shape, self.kernel_size, self.padding)
+
+    def update(self, lr, beta1, beta2, epsilon, step):
+        self.mW = beta1 * self.mW + (1.0 - beta1) * self.dW
+
+        self.vW = beta2 * self.vW + (1.0 - beta2) * (self.dW * self.dW)
+
+        self.mb = beta1 * self.mb + (1.0 - beta1) * self.db
+
+        self.vb = beta2 * self.vb + (1.0 - beta2) * (self.db * self.db)
+
+        mW_hat = self.mW / (1.0 - beta1**step)
+
+        vW_hat = self.vW / (1.0 - beta2**step)
+
+        mb_hat = self.mb / (1.0 - beta1**step)
+
+        vb_hat = self.vb / (1.0 - beta2**step)
+
+        self.W -= lr * mW_hat / (np.sqrt(vW_hat) + epsilon)
+
+        self.b -= lr * mb_hat / (np.sqrt(vb_hat) + epsilon)
+
+
+class Dense:
+    def __init__(self, input_size, output_size):
+        scale = np.sqrt(2.0 / input_size)
+
+        self.W = np.random.randn(input_size, output_size).astype(np.float32) * scale
+
+        self.b = np.zeros(output_size, dtype=np.float32)
+
+        self.mW = np.zeros_like(self.W)
+        self.vW = np.zeros_like(self.W)
+
+        self.mb = np.zeros_like(self.b)
+        self.vb = np.zeros_like(self.b)
+
+    def forward(self, x):
+        self.x = x
+        return x @ self.W + self.b
+
+    def backward(self, dout):
+        self.dW = self.x.T @ dout
+        self.db = np.sum(dout, axis=0)
+
+        return dout @ self.W.T
+
+    def update(self, lr, beta1, beta2, epsilon, step):
+        self.mW = beta1 * self.mW + (1.0 - beta1) * self.dW
+
+        self.vW = beta2 * self.vW + (1.0 - beta2) * (self.dW * self.dW)
+
+        self.mb = beta1 * self.mb + (1.0 - beta1) * self.db
+
+        self.vb = beta2 * self.vb + (1.0 - beta2) * (self.db * self.db)
+
+        mW_hat = self.mW / (1.0 - beta1**step)
+
+        vW_hat = self.vW / (1.0 - beta2**step)
+
+        mb_hat = self.mb / (1.0 - beta1**step)
+
+        vb_hat = self.vb / (1.0 - beta2**step)
+
+        self.W -= lr * mW_hat / (np.sqrt(vW_hat) + epsilon)
+
+        self.b -= lr * mb_hat / (np.sqrt(vb_hat) + epsilon)
 
 
 class NeuralNetwork:
+    INPUT_SIZE = 64
+
     def __init__(self):
-        self.W1 = np.random.randn(784, 128) * 0.01
-        self.b1 = np.zeros((1, 128))
+        self.conv1 = Conv2D(1, 8, 3, 1)
 
-        self.W2 = np.random.randn(128, 64) * 0.01
-        self.b2 = np.zeros((1, 64))
+        self.conv2 = Conv2D(8, 16, 3, 1)
 
-        self.W3 = np.random.randn(64, 10) * 0.01
-        self.b3 = np.zeros((1, 10))
+        self.conv3 = Conv2D(16, 32, 3, 1)
+
+        self.dense1 = Dense(8 * 8 * 32, 128)
+
+        self.dense2 = Dense(128, 10)
+
+        self.step = 0
+
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.epsilon = 1e-8
 
     def forward(self, X):
-        self.X = X
+        X = X.reshape(-1, 64, 64, 1)
 
-        self.z1 = X @ self.W1 + self.b1
-        self.a1 = relu(self.z1)
+        x = self.conv1.forward(X)
+        self.r1 = relu(x)
 
-        self.z2 = self.a1 @ self.W2 + self.b2
-        self.a2 = relu(self.z2)
+        x, self.m1 = max_pool2x2(self.r1)
 
-        self.z3 = self.a2 @ self.W3 + self.b3
-        self.output = softmax(self.z3)
+        x = self.conv2.forward(x)
+        self.r2 = relu(x)
+
+        x, self.m2 = max_pool2x2(self.r2)
+
+        x = self.conv3.forward(x)
+        self.r3 = relu(x)
+
+        x, self.m3 = max_pool2x2(self.r3)
+
+        self.flat_shape = x.shape
+
+        x = x.reshape(x.shape[0], -1)
+
+        x = self.dense1.forward(x)
+        self.r4 = relu(x)
+
+        x = self.dense2.forward(x)
+
+        self.output = softmax(x)
 
         return self.output
 
     def backward(self, labels):
-        batch_size = self.X.shape[0]
+        n = labels.shape[0]
 
-        dz3 = self.output.copy()
-        dz3[np.arange(batch_size), labels] -= 1
-        dz3 /= batch_size
+        dz = self.output.copy()
 
-        self.dW3 = self.a2.T @ dz3
-        self.db3 = np.sum(dz3, axis=0, keepdims=True)
+        dz[np.arange(n), labels] -= 1
 
-        da2 = dz3 @ self.W3.T
-        dz2 = da2 * (self.z2 > 0)
+        dz /= n
 
-        self.dW2 = self.a1.T @ dz2
-        self.db2 = np.sum(dz2, axis=0, keepdims=True)
+        dz = self.dense2.backward(dz)
 
-        da1 = dz2 @ self.W2.T
-        dz1 = da1 * (self.z1 > 0)
+        dz *= self.r4 > 0
 
-        self.dW1 = self.X.T @ dz1
-        self.db1 = np.sum(dz1, axis=0, keepdims=True)
+        dz = self.dense1.backward(dz)
 
-    def update(self, learning_rate):
-        self.W1 -= learning_rate * self.dW1
-        self.b1 -= learning_rate * self.db1
+        dz = dz.reshape(self.flat_shape)
 
-        self.W2 -= learning_rate * self.dW2
-        self.b2 -= learning_rate * self.db2
+        dz = max_pool2x2_backward(dz, self.m3)
 
-        self.W3 -= learning_rate * self.dW3
-        self.b3 -= learning_rate * self.db3
+        dz *= self.r3 > 0
+
+        dz = self.conv3.backward(dz)
+
+        dz = max_pool2x2_backward(dz, self.m2)
+
+        dz *= self.r2 > 0
+
+        dz = self.conv2.backward(dz)
+
+        dz = max_pool2x2_backward(dz, self.m1)
+
+        dz *= self.r1 > 0
+
+        self.conv1.backward(dz)
+
+    def update(self, learning_rate=0.001):
+        self.step += 1
+
+        self.conv1.update(
+            learning_rate, self.beta1, self.beta2, self.epsilon, self.step
+        )
+
+        self.conv2.update(
+            learning_rate, self.beta1, self.beta2, self.epsilon, self.step
+        )
+
+        self.conv3.update(
+            learning_rate, self.beta1, self.beta2, self.epsilon, self.step
+        )
+
+        self.dense1.update(
+            learning_rate, self.beta1, self.beta2, self.epsilon, self.step
+        )
+
+        self.dense2.update(
+            learning_rate, self.beta1, self.beta2, self.epsilon, self.step
+        )
 
     def predict(self, X):
-        probabilities = self.forward(X)
+        return np.argmax(self.forward(X), axis=1)
 
-        return np.argmax(probabilities, axis=1)
+    def save(self, path):
+        np.savez(
+            path,
+            conv1_W=self.conv1.W,
+            conv1_b=self.conv1.b,
+            conv2_W=self.conv2.W,
+            conv2_b=self.conv2.b,
+            conv3_W=self.conv3.W,
+            conv3_b=self.conv3.b,
+            dense1_W=self.dense1.W,
+            dense1_b=self.dense1.b,
+            dense2_W=self.dense2.W,
+            dense2_b=self.dense2.b,
+        )
 
     def load(self, path):
         data = np.load(path)
 
-        self.W1 = data["W1"]
-        self.b1 = data["b1"]
+        self.conv1.W = data["conv1_W"]
+        self.conv1.b = data["conv1_b"]
 
-        self.W2 = data["W2"]
-        self.b2 = data["b2"]
+        self.conv2.W = data["conv2_W"]
+        self.conv2.b = data["conv2_b"]
 
-        self.W3 = data["W3"]
-        self.b3 = data["b3"]
+        self.conv3.W = data["conv3_W"]
+        self.conv3.b = data["conv3_b"]
+
+        self.dense1.W = data["dense1_W"]
+        self.dense1.b = data["dense1_b"]
+
+        self.dense2.W = data["dense2_W"]
+        self.dense2.b = data["dense2_b"]

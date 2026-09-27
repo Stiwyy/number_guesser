@@ -3,11 +3,12 @@ from PIL import Image, ImageDraw
 import numpy as np
 from neural_network.network import NeuralNetwork
 
+from neural_network.preprocessing import preprocess_image
+
 
 class NumberGuesserGUI:
     CANVAS_SIZE = 280
-    OUTPUT_SIZE = 28
-    STROKE_WIDTH = 15
+    STROKE_WIDTH = 10
 
     def __init__(self, root):
         self.root = root
@@ -125,60 +126,30 @@ class NumberGuesserGUI:
         self.result.config(text="Draw a number")
 
     def guess(self):
-        image = self.get_image()
 
-        pixels = np.array(image, dtype=np.float32)
+        network_input = preprocess_image(self.image)
 
-        pixels /= 255.0
-
-        network_input = pixels.reshape(1, 784)
+        network_input = network_input.reshape(1, 64 * 64)
 
         probabilities = self.network.forward(network_input)
 
         prediction = np.argmax(probabilities[0])
 
-        print("\nProbabilities:")
+        print("Probabilities:")
 
         for digit, probability in enumerate(probabilities[0]):
             print(f"{digit}: {probability:.4f}")
 
         print("Prediction:", prediction)
 
-        self.result.config(text=f"You drew {prediction}, fuck you")
+        confidence = probabilities[0][prediction] * 100
 
-    def get_image(self):
-        image = self.image.copy()
+        self.result.config(text=(f"You drew {prediction} ({confidence:.1f}%)"))
 
-        bbox = image.getbbox()
 
-        if bbox is None:
-            return Image.new("L", (28, 28), 0)
+if __name__ == "__main__":
+    root = tk.Tk()
 
-        image = image.crop(bbox)
+    app = NumberGuesserGUI(root)
 
-        print("Cropped size:", image.size)
-
-        width, height = image.size
-
-        size = max(width, height)
-
-        square = Image.new("L", (size, size), 0)
-
-        x_offset = (size - width) // 2
-        y_offset = (size - height) // 2
-
-        square.paste(image, (x_offset, y_offset))
-
-        padded_size = int(size * 1.4)
-
-        padded = Image.new("L", (padded_size, padded_size), 0)
-
-        offset = (padded_size - size) // 2
-
-        padded.paste(square, (offset, offset))
-
-        final_image = padded.resize((28, 28), Image.Resampling.LANCZOS)
-
-        final_image.save("data/digit.png")
-
-        return final_image
+    root.mainloop()
