@@ -131,17 +131,6 @@ class NumberGuesserGUI:
 
         pixels /= 255.0
 
-        print("\nGUI IMAGE:")
-
-        for row in pixels:
-            print("".join("██" if pixel > 0.01 else "  " for pixel in row))
-
-        print("\nImage sum:", pixels.sum())
-
-        print("Image mean:", pixels.mean())
-
-        print("Non-zero pixels:", np.count_nonzero(pixels))
-
         network_input = pixels.reshape(1, 784)
 
         probabilities = self.network.forward(network_input)
@@ -155,7 +144,7 @@ class NumberGuesserGUI:
 
         print("Prediction:", prediction)
 
-        self.result.config(text=f"You drew the {prediction}")
+        self.result.config(text=f"You drew {prediction}, fuck you")
 
     def get_image(self):
         image = self.image.copy()
