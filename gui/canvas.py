@@ -1,7 +1,6 @@
 import tkinter as tk
 from PIL import ImageGrab, Image
 import numpy as np
-from neural_network import network
 from neural_network.network import NeuralNetwork
 
 
@@ -12,7 +11,7 @@ class NumberGuesserGUI:
 
     def __init__(self, root):
         self.network = NeuralNetwork()
-        self.network.load("models/digit_model")
+        self.network.load("models/digit_model.npz")
 
         self.root = root
         self.root.title("Number Guesser")
@@ -97,7 +96,7 @@ class NumberGuesserGUI:
 
         pixels /= 255.0
 
-        network_input = pixels.reshape(1, 28, 28)
+        network_input = pixels.reshape(1, 784)
 
         prediction = self.network.predict(network_input)[0]
 
