@@ -11,6 +11,18 @@ def softmax(x):
     return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
 
+def cross_entropy_loss(predictions, labels):
+    batch_size = predictions.shape[0]
+
+    probabilities = predictions[np.arange(batch_size), labels]
+
+    probabilities = np.clip(probabilities, 1e-12, 1.0)
+
+    loss = -np.log(probabilities)
+
+    return np.mean(loss)
+
+
 class NeuralNetwork:
     def __init__(self):
         self.W1 = np.random.randn(784, 128) * 0.01
