@@ -90,3 +90,15 @@ class NeuralNetwork:
         probabilities = self.forward(X)
 
         return np.argmax(probabilities, axis=1)
+
+    def load(self, path):
+        data = np.load(path)
+
+        self.W1 = data["W1"]
+        self.b1 = data["b1"]
+
+        self.W2 = data["W2"]
+        self.b2 = data["b2"]
+
+        self.W3 = data["W3"]
+        self.b3 = data["b3"]
