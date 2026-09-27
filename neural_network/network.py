@@ -23,6 +23,12 @@ def cross_entropy_loss(predictions, labels):
     return np.mean(loss)
 
 
+def accuracy(predictions, labels):
+    predicted_labels = np.argmax(predictions, axis=1)
+
+    return np.mean(predicted_labels == labels)
+
+
 class NeuralNetwork:
     def __init__(self):
         self.W1 = np.random.randn(784, 128) * 0.01
