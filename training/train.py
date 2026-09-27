@@ -61,3 +61,13 @@ for epoch in range(epochs):
         f"- Loss: {average_loss:.4f} "
         f"- Test accuracy: {test_accuracy * 100:.2f}%"
     )
+
+np.savez(
+    "models/digit_model.npz",
+    W1=network.W1,
+    b1=network.b1,
+    W2=network.W2,
+    b2=network.b2,
+    W3=network.W3,
+    b3=network.b3,
+)
